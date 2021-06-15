@@ -1,0 +1,60 @@
+version: "3.3"
+services:
+  spark-scala-env:
+    image: app/spark-scala-env:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+  app-spark-scala:
+    image: app/app-spark-scala:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-app
+  spark-master:
+    image: app/app-spark-scala:latest
+    container_name: spark-master
+    hostname: localhost
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    networks:
+      - spark-network
+    environment:
+      - "SPARK_LOCAL_IP=spark-master"
+      - "SPARK_MASTER_PORT=7077"
+      - "SPARK_MASTER_WEBUI_PORT=8080"
+    command: ["sh", "-c", "/spark/bin/spark-class org.apache.spark.deploy.master.Master --ip $${SPARK_LOCAL_IP} --port $${SPARK_MASTER_PORT} --webui-port $${SPARK_MASTER_WEBUI_PORT}"]
+  spark-worker:
+    image: app/app-spark-scala:latest
+    hostname: localhost
+    depends_on:
+      - spark-master
+    ports:
+      - 8080
+    networks:
+      - spark-network
+    #network_mode: host
+    environment:
+      - "SPARK_MASTER=spark://spark-master:7077"
+      - "SPARK_WORKER_WEBUI_PORT=8080"
+      - "SPARK_WORKER_CORES=2"
+    command: ["sh", "-c", "/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --webui-port $${SPARK_WORKER_WEBUI_PORT} $${SPARK_MASTER}"]
+  app-submit-job:
+    image: app/app-spark-scala:latest
+    ports:
+      - "4040:4040"
+    environment:
+      - "SPARK_APPLICATION_MAIN_CLASS=LogParser"
+      - "SPARK_MASTER=spark://spark-master:7077"
+      - "APP_JAR_LOC=/app/target/scala-2.12/LogParser-assembly-0.1.0.jar"
+    hostname: localhost
+    networks:
+      - spark-network
+    volumes:
+      - ./appdata:/appdata
+    command: ["sh", "-c", "/spark/bin/spark-submit --class $${SPARK_APPLICATION_MAIN_CLASS} --master $${SPARK_MASTER} $${APP_JAR_LOC}"]
+networks:
+  spark-network:
+    driver: bridge
+    ipam:
+      driver: default
